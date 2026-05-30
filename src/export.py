@@ -32,20 +32,63 @@ def export_geometry_json(rep: dict, path: str = "output/dome_geometry.json",
 
 def export_snow_scene_json(geo: dict, path: str = "output/sim/dome_snow_scene.json",
                            total_snow_m: float = 1.0, wind_drift: float = 0.35,
-                           wind_az_deg: float = 0.0, culm_outer_d: float = 0.10) -> str:
-    """雪景色Blender用: 幾何＋物理モデルによる各面の積雪深(融雪なし)をJSON出力。"""
+                           wind_az_deg: float = 0.0, culm_outer_d: float = 0.10,
+                           section=None, material=None, rho_snow: float = 300.0,
+                           defl_exagg_ratio: float = 0.08) -> str:
+    """雪景色Blender用JSON: 幾何＋物理モデルの各面積雪深(融雪なし)＋
+    満積雪時のFEM変形(節点変位)＋推奨誇張倍率 を出力。
+
+    Blender側で雪の成長に同期してドームをたわませ、雪冠も追従させる（FEM連成）。
+    """
+    import os
+    import numpy as np
     from .snow_sim import accumulate_field
+    from .fem import TrussModel
+    from .loads import _face_geom
+    from .bamboo import CULM_100, MOSO, G
+
+    section = section or CULM_100
+    material = material or MOSO
     field = accumulate_field(geo, total_snow_m, wind_drift, wind_az_deg)
+    depth = field["depth_per_face"]
+    nodes, members, faces = geo["nodes"], geo["members"], geo["faces"]
+    plan, _, _, _ = _face_geom(nodes, faces)
+
+    # 満積雪荷重 + 自重 → FEM変形
+    F = np.zeros(3 * len(nodes))
+    qface = rho_snow * G * depth                       # [N/m²]
+    for fidx, (a, b, c) in enumerate(faces):
+        fz = qface[fidx] * plan[fidx] / 3.0
+        for nd in (a, b, c):
+            F[3 * nd + 2] -= fz
+    for m, (i, j) in enumerate(members):
+        half = 0.5 * section.weight_per_length(material) * geo["lengths"][m]
+        F[3 * i + 2] -= half; F[3 * j + 2] -= half
+    model = TrussModel(nodes, members, material.E,
+                       section.area * np.ones(len(members)))
+    for s in geo["supports"]:
+        model.add_pin_support(s)
+    model.set_load_vector(F)
+    try:
+        res = model.solve()
+        disp = res["disp"]
+        max_disp = float(np.linalg.norm(disp, axis=1).max())
+    except Exception:
+        disp = np.zeros((len(nodes), 3)); max_disp = 1e-9
+
+    dome_size = 2.0 * geo["meta"]["base_radius"]
+    defl_scale = (defl_exagg_ratio * dome_size / max_disp) if max_disp > 1e-9 else 0.0
+
     data = dict(
-        nodes=geo["nodes"].tolist(),
-        members=geo["members"].tolist(),
-        faces=geo["faces"].tolist(),
+        nodes=nodes.tolist(), members=members.tolist(), faces=faces.tolist(),
         supports=list(geo["supports"]),
-        snow_depth_per_face=field["depth_per_face"].tolist(),  # 鉛直積雪深[m]
+        snow_depth_per_face=depth.tolist(),            # 鉛直積雪深[m]
+        node_disp=disp.tolist(),                       # 満積雪時の節点変位[m]
+        defl_scale=defl_scale,                         # 推奨誇張倍率
+        max_disp_mm=max_disp * 1e3,
         total_snow_m=total_snow_m, wind_drift=wind_drift, wind_az_deg=wind_az_deg,
         culm_outer_d=culm_outer_d,
     )
-    import os
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, ensure_ascii=False)

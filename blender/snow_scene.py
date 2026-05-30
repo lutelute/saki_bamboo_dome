@@ -112,6 +112,15 @@ def main():
     args = parse_args()
     geo = json.load(open(args.geo))
     nodes = geo["nodes"]; members = geo["members"]; faces = geo.get("faces", [])
+    node_disp = geo.get("node_disp")               # 満積雪時の節点変位[m]（FEM連成）
+    defl_scale = geo.get("defl_scale", 0.0)        # 変形誇張倍率
+    use_defl = (node_disp is not None) and (args.animate > 0) and (defl_scale > 0)
+
+    def disp_of(i):                                # 誇張後の節点変位ベクトル
+        if use_defl:
+            d = node_disp[i]
+            return Vector((d[0], d[1], d[2])) * defl_scale
+        return Vector((0, 0, 0))
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
@@ -130,7 +139,7 @@ def main():
     def bamboo(bm):
         for (i, j) in members:
             cylinder_geo(bm, nodes[i], nodes[j], args.culm_d / 2.0)
-    build_mesh_object("Bamboo", bamboo, mat_bamboo)
+    bamboo_obj = build_mesh_object("Bamboo", bamboo, mat_bamboo)
 
     # --- ドームに積もる雪冠（物理モデル snow_sim の積雪深で駆動・融雪なし） ---
     # snow_depth_per_face は src.snow_sim.accumulate_field の出力（鉛直積雪深[m]）。
@@ -158,13 +167,14 @@ def main():
             mu_b = math.sqrt(max(0.0, math.cos(math.radians(1.5 * beta)))) if beta < 60 else 0.0
             d_node[i] = args.snow_m * mu_b
 
+    # 満積雪状態の雪冠頂点 = 変形後の節点 + 法線方向の層厚（FEM連成）
     snow_verts = []
     keep_node = [False] * n_nodes
     for i in range(n_nodes):
         nrm = node_norm[i]
         beta = math.degrees(math.acos(max(-1, min(1, nrm.z))))
         t = d_node[i] * max(0.15, math.cos(math.radians(beta)))   # 法線方向の層厚
-        snow_verts.append(Vector(nodes[i]) + nrm * t)
+        snow_verts.append(Vector(nodes[i]) + disp_of(i) + nrm * t)
         keep_node[i] = d_node[i] > 0.05            # 積もる節点
     snow_faces = [f for f in faces if all(keep_node[i] for i in f)]
     cap_obj = cap_solid = None
@@ -273,6 +283,25 @@ def main():
                     for kp in fc.keyframe_points:
                         kp.interpolation = "LINEAR"
 
+        # 竹ドームのたわみ（FEM連成）: 各頂点を最寄り節点の変位で移動するシェイプキー
+        if use_defl:
+            node_vecs = [Vector(n) for n in nodes]
+            disp_vecs = [disp_of(i) for i in range(n_nodes)]
+            bb = bamboo_obj.shape_key_add(name="Basis", from_mix=False)
+            dk = bamboo_obj.shape_key_add(name="Sag", from_mix=False)
+            for vi, v in enumerate(bamboo_obj.data.vertices):
+                co = v.co
+                # 最寄り節点（ブルートフォース, 節点数は少ない）
+                best, bd = 0, 1e18
+                for ni, nv in enumerate(node_vecs):
+                    dd = (co - nv).length_squared
+                    if dd < bd:
+                        bd = dd; best = ni
+                dk.data[vi].co = co + disp_vecs[best]
+            dk.value = 0.0; dk.keyframe_insert("value", frame=1)
+            dk.value = 1.0; dk.keyframe_insert("value", frame=N)
+            _lin(bamboo_obj.data.shape_keys.animation_data)
+
         # 雪冠シェイプキー 0→1（フレーム1=雪ゼロ→Nで満積雪）
         if cap_obj is not None and cap_obj.data.shape_keys and \
                 "Snow" in cap_obj.data.shape_keys.key_blocks:
@@ -301,9 +330,10 @@ def main():
             if ob:
                 _lin(ob.animation_data)
 
-    # --- レンダー設定 ---
+    # --- レンダー設定（H264は幅高さとも偶数が必要） ---
     sc.render.engine = "BLENDER_EEVEE_NEXT"
-    sc.render.resolution_x = args.res; sc.render.resolution_y = int(args.res * 0.62)
+    sc.render.resolution_x = args.res - (args.res % 2)
+    sc.render.resolution_y = int(args.res * 0.62) // 2 * 2
     try:
         sc.eevee.taa_render_samples = args.samples
     except AttributeError:

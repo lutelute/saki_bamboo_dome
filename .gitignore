@@ -22,3 +22,7 @@ output/*.obj
 # シミュレーション動画・大容量生成物（run_sim.py で再生成可能）
 output/*.mp4
 output/sim/
+
+# MPM用 venv（python3.12 + taichi）と中間生成物
+.venv-mpm/
+output/sim/mpm/

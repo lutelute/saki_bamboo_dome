@@ -34,11 +34,15 @@ def parse_args():
     ap.add_argument("--geo", required=True)
     ap.add_argument("--out", default="output/sim/snow_scene.png")
     ap.add_argument("--blend", default="")
-    ap.add_argument("--snow-m", type=float, default=1.0, help="積雪深[m]（クラウン）")
+    ap.add_argument("--snow-m", type=float, default=1.0, help="積雪深[m]（クラウン, 最終）")
     ap.add_argument("--culm-d", type=float, default=0.10)
     ap.add_argument("--res", type=int, default=1500)
     ap.add_argument("--samples", type=int, default=64)
     ap.add_argument("--falling", type=int, default=1500, help="舞う雪の粒子数")
+    ap.add_argument("--animate", type=int, default=0,
+                    help="アニメフレーム数(0=静止画)。徐々に積もるタイムラプス")
+    ap.add_argument("--fps", type=int, default=24)
+    ap.add_argument("--hours", type=float, default=14.0, help="一晩の時間(表示用)")
     return ap.parse_args(argv)
 
 
@@ -163,18 +167,26 @@ def main():
         snow_verts.append(Vector(nodes[i]) + nrm * t)
         keep_node[i] = d_node[i] > 0.05            # 積もる節点
     snow_faces = [f for f in faces if all(keep_node[i] for i in f)]
+    cap_obj = cap_solid = None
     if snow_faces:
         me = bpy.data.meshes.new("SnowCap")
         me.from_pydata([tuple(v) for v in snow_verts], [], [tuple(f) for f in snow_faces])
         me.update()
-        ob = bpy.data.objects.new("SnowCap", me)
-        bpy.context.collection.objects.link(ob)
-        ob.data.materials.append(mat_snow)
-        for p in ob.data.polygons:
+        cap_obj = bpy.data.objects.new("SnowCap", me)
+        bpy.context.collection.objects.link(cap_obj)
+        cap_obj.data.materials.append(mat_snow)
+        for p in cap_obj.data.polygons:
             p.use_smooth = True
-        # ソリッド化して厚みのある雪に
-        solid = ob.modifiers.new("Solidify", type="SOLIDIFY")
-        solid.thickness = args.snow_m * 0.25; solid.offset = 1.0
+        cap_solid = cap_obj.modifiers.new("Solidify", type="SOLIDIFY")
+        cap_solid.thickness = args.snow_m * 0.25; cap_solid.offset = 1.0
+        # アニメ用シェイプキー: Basis=雪なし(ドーム面), Snow=満積雪
+        if args.animate > 0:
+            basis = cap_obj.shape_key_add(name="Basis", from_mix=False)
+            for i in range(n_nodes):
+                basis.data[i].co = Vector(nodes[i])      # 雪ゼロ位置
+            snow_key = cap_obj.shape_key_add(name="Snow", from_mix=False)
+            for i in range(n_nodes):
+                snow_key.data[i].co = snow_verts[i]      # 満積雪位置
 
     # --- 雪原の地面（起伏のある白い雪 ＋ ドーム基部の雪だまり） ---
     bpy.ops.mesh.primitive_grid_add(x_subdivisions=120, y_subdivisions=120,
@@ -206,9 +218,11 @@ def main():
     grain.data.materials.append(mat_snow)
     bpy.ops.mesh.primitive_plane_add(size=size * 3, location=(cx, cy, top + size))
     em = bpy.context.active_object; em.name = "Sky"
+    _span = args.animate if args.animate > 0 else 60
     psm = em.modifiers.new("Fall", type="PARTICLE_SYSTEM")
     ps = em.particle_systems[psm.name].settings
-    ps.count = args.falling; ps.frame_start, ps.frame_end = 1, 60; ps.lifetime = 60
+    ps.count = args.falling; ps.frame_start, ps.frame_end = 1, _span
+    ps.lifetime = max(40, _span // 2)
     ps.physics_type = "NEWTON"; ps.normal_factor = 0.0; ps.factor_random = 0.1
     ps.mass = 0.01; ps.effector_weights.gravity = 0.15      # ゆっくり舞う
     ps.render_type = "OBJECT"; ps.instance_object = grain
@@ -245,25 +259,78 @@ def main():
     cam.rotation_quaternion = direction.to_track_quat("-Z", "Y")
     sc.camera = cam
 
+    # --- アニメ: 徐々に積もる（融雪なし＝単調増加）。物理モデルの積雪深に比例 ---
+    animate = args.animate > 0
+    if animate:
+        N = args.animate
+        sc.frame_start, sc.frame_end = 1, N
+        full_thk = args.snow_m * 0.25
+        full_disp = disp.strength
+
+        def _lin(ad):     # アクションのキーを線形補間に
+            if ad and ad.action:
+                for fc in ad.action.fcurves:
+                    for kp in fc.keyframe_points:
+                        kp.interpolation = "LINEAR"
+
+        # 雪冠シェイプキー 0→1（フレーム1=雪ゼロ→Nで満積雪）
+        if cap_obj is not None and cap_obj.data.shape_keys and \
+                "Snow" in cap_obj.data.shape_keys.key_blocks:
+            kb = cap_obj.data.shape_keys.key_blocks["Snow"]
+            kb.value = 0.0; kb.keyframe_insert("value", frame=1)
+            kb.value = 1.0; kb.keyframe_insert("value", frame=N)
+            cap_solid.thickness = 0.0; cap_solid.keyframe_insert("thickness", frame=1)
+            cap_solid.thickness = full_thk; cap_solid.keyframe_insert("thickness", frame=N)
+            _lin(cap_obj.data.shape_keys.animation_data)   # シェイプキーは別アクション
+        # 地面の積雪（Displace強度 0→満）
+        disp.strength = 0.0; disp.keyframe_insert("strength", frame=1)
+        disp.strength = full_disp; disp.keyframe_insert("strength", frame=N)
+        # 基部の雪だまり（Z方向に成長）
+        drift.scale = (1, 1, 0.0); drift.keyframe_insert("scale", frame=1)
+        drift.scale = (1, 1, 0.5); drift.keyframe_insert("scale", frame=N)
+        # 地面の色 草原(緑)→雪(白)、粗さも変化
+        gb = principled(mat_ground_snow)
+        for fr, col, rg in ((1, (0.22, 0.34, 0.13, 1.0), 0.8),
+                            (N, (0.93, 0.95, 1.0, 1.0), 0.45)):
+            gb.inputs["Base Color"].default_value = col
+            gb.inputs["Base Color"].keyframe_insert("default_value", frame=fr)
+            gb.inputs["Roughness"].default_value = rg
+            gb.inputs["Roughness"].keyframe_insert("default_value", frame=fr)
+        _lin(mat_ground_snow.node_tree.animation_data)
+        for ob in (cap_obj, ground, drift):
+            if ob:
+                _lin(ob.animation_data)
+
     # --- レンダー設定 ---
     sc.render.engine = "BLENDER_EEVEE_NEXT"
     sc.render.resolution_x = args.res; sc.render.resolution_y = int(args.res * 0.62)
-    sc.render.image_settings.file_format = "PNG"
     try:
         sc.eevee.taa_render_samples = args.samples
     except AttributeError:
         pass
-    sc.frame_set(45)                                # 雪が舞っている途中
 
     if args.blend:
+        sc.frame_set(sc.frame_start if animate else 45)
         os.makedirs(os.path.dirname(os.path.abspath(args.blend)), exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
         print(f"[scene] blend saved -> {args.blend}")
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-        sc.render.filepath = os.path.abspath(args.out)
-        bpy.ops.render.render(write_still=True)
-        print(f"[scene] rendered -> {args.out}")
+        if animate:
+            sc.render.image_settings.file_format = "FFMPEG"
+            sc.render.ffmpeg.format = "MPEG4"; sc.render.ffmpeg.codec = "H264"
+            sc.render.ffmpeg.constant_rate_factor = "HIGH"; sc.render.fps = args.fps
+            sc.render.filepath = os.path.abspath(args.out)
+            print(f"[scene] rendering animation ({N}フレーム, 一晩{args.hours:.0f}h→1m) ...")
+            bpy.ops.render.render(animation=True)
+            import glob
+            print(f"[scene] done -> {glob.glob(args.out + '*.mp4')}")
+        else:
+            sc.render.image_settings.file_format = "PNG"
+            sc.frame_set(45)
+            sc.render.filepath = os.path.abspath(args.out)
+            bpy.ops.render.render(write_still=True)
+            print(f"[scene] rendered -> {args.out}")
 
 
 if __name__ == "__main__":

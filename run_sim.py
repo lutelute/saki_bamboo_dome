@@ -83,23 +83,29 @@ def run_cfd(args):
 
 
 def run_blender_snow(args, rep):
-    banner("4. Blender 粒子雪シミュレーション")
+    banner("4. Blender 雪景色アニメ（徐々に積もる・物理モデル駆動・融雪なし）")
     if not os.path.exists(BLENDER):
         print("  Blender 未検出 → スキップ")
         return
-    gj = export_geometry_json(rep, f"{OUT}/dome_geo_for_blender.json", "D+S")
+    from src.export import export_snow_scene_json
+    gj = export_snow_scene_json(rep["geo"], f"{OUT}/dome_snow_scene.json",
+                                total_snow_m=1.0, wind_drift=0.35,
+                                culm_outer_d=args.culm_d)
     cmd = [BLENDER, "--background", "--factory-startup",
-           "--python", "blender/snow_physics.py", "--",
-           "--geo", os.path.abspath(gj), "--out", os.path.abspath(f"{OUT}/snow_blender_"),
-           "--frames", "100", "--count", "1400", "--culm-d", str(args.culm_d)]
-    print("  Blender 粒子物理を実行中（数分）...")
+           "--python", "blender/snow_scene.py", "--",
+           "--geo", os.path.abspath(gj),
+           "--out", os.path.abspath(f"{OUT}/snow_scene_anim_"),
+           "--blend", os.path.abspath(f"{OUT}/snow_scene_anim.blend"),
+           "--snow-m", "1.0", "--culm-d", str(args.culm_d),
+           "--animate", "80", "--res", "1200", "--hours", "14"]
+    print("  Blender 雪景色アニメをレンダリング中（数分, 草原→雪 80フレーム）...")
     t0 = time.time()
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     except subprocess.TimeoutExpired:
-        print("  タイムアウト（600s）"); return
+        print("  タイムアウト（900s）"); return
     for line in r.stdout.splitlines():
-        if any(k in line for k in ("[snow]", "Error", "Traceback")):
+        if any(k in line for k in ("[scene]", "Error", "Traceback")):
             print("   " + line)
     if r.returncode != 0:
         print("  失敗（stderr末尾）:\n   " + "\n   ".join(r.stderr.splitlines()[-6:]))

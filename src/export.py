@@ -30,6 +30,28 @@ def export_geometry_json(rep: dict, path: str = "output/dome_geometry.json",
     return path
 
 
+def export_snow_scene_json(geo: dict, path: str = "output/sim/dome_snow_scene.json",
+                           total_snow_m: float = 1.0, wind_drift: float = 0.35,
+                           wind_az_deg: float = 0.0, culm_outer_d: float = 0.10) -> str:
+    """雪景色Blender用: 幾何＋物理モデルによる各面の積雪深(融雪なし)をJSON出力。"""
+    from .snow_sim import accumulate_field
+    field = accumulate_field(geo, total_snow_m, wind_drift, wind_az_deg)
+    data = dict(
+        nodes=geo["nodes"].tolist(),
+        members=geo["members"].tolist(),
+        faces=geo["faces"].tolist(),
+        supports=list(geo["supports"]),
+        snow_depth_per_face=field["depth_per_face"].tolist(),  # 鉛直積雪深[m]
+        total_snow_m=total_snow_m, wind_drift=wind_drift, wind_az_deg=wind_az_deg,
+        culm_outer_d=culm_outer_d,
+    )
+    import os
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, ensure_ascii=False)
+    return path
+
+
 def export_mesh(rep: dict, path: str = "output/dome.glb",
                 culm_radius: float | None = None) -> str:
     """竹シリンダーを実体メッシュ化して書き出し（拡張子で形式自動判定）。"""

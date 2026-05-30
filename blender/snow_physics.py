@@ -33,6 +33,8 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--geo", required=True)
     ap.add_argument("--out", default="output/sim/snow_blender_")
+    ap.add_argument("--blend", default="", help=".blend 保存パス（GUIで開く用）")
+    ap.add_argument("--no-render", action="store_true", help="mp4レンダリングを省略")
     ap.add_argument("--frames", type=int, default=120)
     ap.add_argument("--count", type=int, default=1500)
     ap.add_argument("--culm-d", type=float, default=0.10)
@@ -179,10 +181,26 @@ def main():
     world.use_nodes = True
     world.node_tree.nodes.get("Background").inputs["Color"].default_value = (0.04, 0.05, 0.07, 1)
 
-    # ベイク（frame_set ループ）
+    # ベイク（frame_set ループ＋point cache 凍結）
     print("[snow] baking physics ...")
     for f in range(sc.frame_start, sc.frame_end + 1):
         sc.frame_set(f)
+    try:
+        with bpy.context.temp_override(scene=sc):
+            bpy.ops.ptcache.bake_all(bake=True)
+    except Exception as e:
+        print(f"[snow] ptcache.bake_all skipped: {e}")
+
+    # .blend 保存（GUIで開いて再生・編集できる）
+    if args.blend:
+        sc.frame_set(sc.frame_start)
+        os.makedirs(os.path.dirname(os.path.abspath(args.blend)), exist_ok=True)
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
+        print(f"[snow] blend saved -> {args.blend}")
+
+    if args.no_render:
+        print("[snow] render skipped (--no-render)")
+        return
 
     # レンダリング設定（mp4）
     sc.render.engine = "BLENDER_EEVEE_NEXT"

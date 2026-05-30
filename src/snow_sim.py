@@ -20,6 +20,31 @@ from .loads import _face_geom
 from . import design as D
 
 
+def accumulate_field(geo: dict, total_snow_m: float = 1.0,
+                     wind_drift: float = 0.35, wind_az_deg: float = 0.0) -> dict:
+    """積雪堆積の物理モデルによる各面の積雪深（融雪なし, 可視化用）。
+
+    総降雪(水平面換算) total_snow_m に対し、屋根形状係数 μ_b=√cos(1.5β) で
+    傾斜面は滑落して薄く、風で風上削剥/風下堆積する。FEM連成は行わない。
+    戻り値: dict(depth_per_face[m,鉛直], beta_deg, mu_b, total_snow_m)
+    """
+    nodes, faces = geo["nodes"], geo["faces"]
+    plan, area3d, n, centroid = _face_geom(nodes, faces)
+    nz = np.clip(n[:, 2], -1.0, 1.0)
+    beta = np.degrees(np.arccos(nz))
+    mu_b = np.where(beta < 60.0,
+                    np.sqrt(np.clip(np.cos(np.radians(1.5 * beta)), 0, 1)), 0.0)
+    upward = nz > 0.05
+    az = np.radians(wind_az_deg)
+    wdir = np.array([np.cos(az), np.sin(az), 0.0])
+    nh = n.copy(); nh[:, 2] = 0
+    lee = nh @ wdir
+    drift = 1.0 + wind_drift * np.tanh(2.0 * lee)
+    depth = total_snow_m * mu_b * drift * upward          # 鉛直積雪深[m]（融雪なし）
+    return dict(depth_per_face=depth, beta_deg=beta, mu_b=mu_b,
+                total_snow_m=total_snow_m)
+
+
 def _build_model(geo, section, material):
     model = TrussModel(geo["nodes"], geo["members"], material.E,
                        section.area * np.ones(len(geo["members"])))

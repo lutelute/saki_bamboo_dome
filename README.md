@@ -58,6 +58,7 @@ python3 run_demo.py --no-study            # 設計スタディを省略
 ```
 saki_bamboo_dome/
 ├── run_demo.py            ← ワンコマンドDEMO（解析→可視化→出力→Blender→設計スタディ）
+├── run_sim.py             ← シミュレーションDEMO（積雪堆積・風CFD・風圧・Blender雪）
 ├── src/
 │   ├── geometry.py        ジオデシックドーム生成（正二十面体細分割・球面投影・カット）
 │   ├── bamboo.py          孟宗竹の材料特性・中空円形断面・許容応力（ISO 22156）
@@ -65,15 +66,22 @@ saki_bamboo_dome/
 │   ├── loads.py           自重・積雪・風（福井市・建築基準法）
 │   ├── design.py          許容応力照査・Euler座屈・Rankine-Gordon・細長比
 │   ├── analysis.py        統合ドライバ（解析→照査→積雪耐力→レポート）
+│   ├── tube3d.py          竹を実直径の3Dチューブ(円柱)メッシュ化（plotly用）
 │   ├── viz_mpl.py         matplotlib 3D（PNG）
-│   ├── viz_plotly.py      plotly インタラクティブ3D（HTML）
+│   ├── viz_plotly.py      plotly インタラクティブ3D（変形図・竹チューブ）
+│   ├── dashboard.py       格子密度×サイズ 比較ダッシュボード（HTML）
+│   ├── wind_cfd.py        風CFD: 格子ボルツマン法 D2Q9（Strouhal検証付き）
+│   ├── wind_pressure.py   方向性風圧 cp(θ)（半球ドーム外圧係数）
+│   ├── snow_sim.py        積雪堆積の時間発展（高さ場×FEM連成・滑落・吹きだまり）
+│   ├── sim_viz.py         シミュレーションのアニメ出力（mp4 / plotly）
 │   └── export.py          幾何JSON / GLB・OBJ メッシュ書き出し
 ├── blender/
-│   └── build_dome.py      Blender 4.5 ヘッドレスビルダ（bpy/bmesh）
+│   ├── build_dome.py      Blender 4.5 ヘッドレスビルダ（bpy/bmesh）
+│   └── snow_physics.py    Blender 粒子物理による雪の堆積＋mp4
 ├── tests/
 │   ├── test_fem.py        FEMソルバ検証（閉形解4ケース）
 │   └── verification_case.json  教科書の空間トラス検証ケース
-└── output/                生成物
+└── output/                生成物（output/sim/ にシミュレーション動画）
 ```
 
 ---
@@ -160,6 +168,25 @@ v3 φ125×t12  利用率0.67  耐力6.34kN  ✓OK ← 最小で要求充足
 v4 φ100×t10  利用率0.76  耐力5.57kN  ✓OK
 v4 φ150×t15  利用率0.22  耐力19.6kN  ✓OK
 ```
+
+---
+
+## 6.5 シミュレーション（`run_sim.py`）
+
+```bash
+python3 run_sim.py                 # 積雪・風CFD・風圧・Blender雪 を全実行
+python3 run_sim.py --no-cfd        # CFD省略（重い）
+python3 run_sim.py --no-blender    # Blender省略
+```
+
+| 種別 | 手法 | 出力 |
+|---|---|---|
+| **積雪堆積** | 高さ場×FEM連成。屋根形状係数 μ_b=√cos1.5β で急斜面は滑落、クラウンに堆積。風で吹きだまり（風上削剥/風下堆積）。毎ステップFEMで利用率→**崩壊時刻を検出** | `output/sim/snow_sim.html`（再生/スライダ）, `snow_sim.mp4` |
+| **風CFD** | 格子ボルツマン法 **D2Q9・BGK**（自前実装, numpy）。流線・渦度・圧力場。**円柱Strouhal数 St≈0.21 で物理検証**（理論0.175） | `output/sim/wind_cfd.mp4`（渦度＋流速） |
+| **方向性風圧** | 半球ドームの外圧係数 **cp(θ)**（風上+0.8〜クラウン−1.0〜風下−0.4, Cheng&Fu/EN1991-1-4/AIJ準拠）。横力・吹上げを算定 | `output/sim/wind_pressure.html`（cp 3Dヒートマップ） |
+| **Blender粒子雪** | bpy ニュートン粒子＋Collisionで雪を降らせ堆積させレンダリング | `output/sim/snow_blender_*.mp4` |
+
+積雪シミュレーション例（v3 φ100, 降雪4cm/時, 福井想定）→ **約48時間（2日）で利用率1.0に達し崩壊**、クラウン積雪は最大約196cm。出典は research 裏取り（ISO 22156, 建築基準法, Krüger et al. LBM, Cheng&Fu 2010 ほか）。
 
 ---
 

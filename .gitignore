@@ -18,3 +18,7 @@ output/*.blend
 output/*.blend1
 output/*.glb
 output/*.obj
+
+# シミュレーション動画・大容量生成物（run_sim.py で再生成可能）
+output/*.mp4
+output/sim/

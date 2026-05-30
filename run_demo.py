@@ -128,9 +128,7 @@ def main():
     p1 = plot_dome(rep, "D+S", f"{OUT}/dome_force_util.png")
     p2 = plot_geometry(rep, f"{OUT}/dome_geometry_view.png")
     p3 = build_interactive(rep, f"{OUT}/dome_interactive.html")
-    p4 = build_dashboard(f"{OUT}/dome_dashboard.html",
-                         radii=(1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0),
-                         frequency=args.frequency, section=section,
+    p4 = build_dashboard(f"{OUT}/dome_dashboard.html", section=section,
                          height_ratio=args.height, joint_efficiency=args.joint_eff)
     for p in (p1, p2, p3, p4):
         print(f"  生成: {p}")

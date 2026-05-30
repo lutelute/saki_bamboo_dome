@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# エディタ・OS
+.DS_Store
+.claude/
+
+# ログ（セキュリティキーを含むため除外）
+logs/
+
+# 生成物の重い3Dバイナリ（run_demo.py で再生成可能）
+output/*.blend
+output/*.blend1
+output/*.glb
+output/*.obj

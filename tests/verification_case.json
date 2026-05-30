@@ -1,0 +1,15 @@
+{
+  "test_case_name": "orthogonal_three_bar_space_truss",
+  "description": "Single free pin-joint held by three mutually orthogonal bars to pinned supports. Statically determinate, exact hand solution. Source: Hibbeler, Structural Analysis (space truss joint equilibrium).",
+  "nodes": [[0, 0, 0], [2, 0, 0], [0, 3, 0], [0, 0, 4]],
+  "members": [[0, 1], [0, 2], [0, 3]],
+  "supports": [[1, 1, 1, 1], [2, 1, 1, 1], [3, 1, 1, 1]],
+  "loads": [[0, 1000, -2000, -3000]],
+  "material": {"E_Pa": 200000000000, "A_m2": 0.001},
+  "expected": {
+    "member_axial_forces_N": [-1000, 2000, 3000],
+    "key_displacement": "u_A = (+1.0e-5, -3.0e-5, -6.0e-5) m",
+    "description": "AB=-1000 (compression), AC=+2000 (tension), AD=+3000 (tension)"
+  },
+  "source": "Hibbeler, Structural Analysis / McCormac, Structural Analysis"
+}

@@ -1,0 +1,11 @@
+# 竹ドーム 構造解析・3Dモデリング ツールキット
+# Python 3.10+ （開発・検証は 3.14 / numpy 2.x）
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+plotly>=5.0
+trimesh>=4.0
+
+# 3Dレンダリングは Blender 4.2+ を別途インストール（pip不可）
+#   macOS: https://www.blender.org/download/  → /Applications/Blender.app
+#   blender/build_dome.py をヘッドレス実行（bpy/bmesh は Blender 同梱Pythonを使用）

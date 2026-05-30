@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>竹ドーム 積雪耐力 検証ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c1016; --panel:#141a23; --panel2:#1b2330; --line:#283142;
+    --ink:#dfe6ef; --dim:#8493a8; --faint:#5a677b;
+    --comp:#4ec9d4;        /* 圧縮 cyan */
+    --tens:#f0a23a;        /* 引張 amber */
+    --shed:#3a4660;        /* 滑落帯 */
+    --ok:#5fd38a; --warn:#f0c14b; --bad:#ef6a6a;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --sans:'IBM Plex Sans JP',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-weight:300;
+    background-image:radial-gradient(circle at 18% 12%,#16202e 0,transparent 45%),
+      radial-gradient(circle at 85% 90%,#13202a 0,transparent 50%);}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+  header{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px}
+  h1{font-weight:600;font-size:20px;letter-spacing:.04em;display:flex;align-items:center;gap:10px}
+  h1 .tag{font-family:var(--mono);font-size:10px;font-weight:500;color:var(--comp);
+    border:1px solid var(--comp);border-radius:3px;padding:2px 6px;letter-spacing:.1em}
+  header p{color:var(--dim);font-size:12.5px;margin-top:6px;line-height:1.6}
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:20px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+  .panel h2{font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--faint);
+    text-transform:uppercase;margin-bottom:14px;font-family:var(--mono)}
+  .ctrl{margin-bottom:15px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12.5px;color:var(--dim);margin-bottom:6px}
+  .ctrl label b{font-family:var(--mono);color:var(--ink);font-weight:500}
+  input[type=range]{-webkit-appearance:none;width:100%;height:3px;background:var(--line);border-radius:3px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--comp);cursor:pointer;box-shadow:0 0 0 4px rgba(78,201,212,.15)}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border:none;border-radius:50%;background:var(--comp);cursor:pointer}
+  .seg{display:flex;gap:6px;margin-top:4px}
+  .seg button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+    font-family:var(--sans);font-size:11.5px;padding:7px 4px;border-radius:6px;cursor:pointer;transition:.15s}
+  .seg button.on{background:var(--comp);color:#06131a;border-color:var(--comp);font-weight:500}
+  .chk{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim);cursor:pointer;margin-top:4px}
+  .chk input{accent-color:var(--comp);width:15px;height:15px}
+  /* results */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 13px;position:relative;overflow:hidden}
+  .card .k{font-size:10.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.06em;margin-bottom:5px}
+  .card .v{font-family:var(--mono);font-size:21px;font-weight:600}
+  .card .u{font-size:11px;color:var(--dim);font-weight:400}
+  .card.flag::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+  .card.s-ok::after{background:var(--ok)} .card.s-warn::after{background:var(--warn)} .card.s-bad::after{background:var(--bad)}
+  .badge{font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle}
+  .b-ok{background:rgba(95,211,138,.16);color:var(--ok)} .b-warn{background:rgba(240,193,75,.16);color:var(--warn)} .b-bad{background:rgba(239,106,106,.16);color:var(--bad)}
+  .viz{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.viz{grid-template-columns:1fr}}
+  .vbox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px}
+  .vbox h3{font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--faint);font-family:var(--mono);margin-bottom:10px}
+  canvas{width:100%;display:block}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin-top:8px;font-family:var(--mono)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  .notes{margin-top:20px;font-size:11.5px;color:var(--faint);line-height:1.75}
+  .notes b{color:var(--dim);font-weight:500}
+  .notes code{font-family:var(--mono);color:var(--comp);background:var(--panel2);padding:1px 5px;border-radius:3px}
+  svg{width:100%;display:block;overflow:visible}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>竹ドーム 積雪耐力 検証ツール <span class="tag">STRUCTURAL / SNOW</span></h1>
+    <p>球冠ドームの薄膜応力分布・部材オイラー座屈・跳躍座屈リスク・基部引張リング張力をリアルタイム計算。建築基準法施行令第86条の積雪荷重をベースにスクリーニング検証します。</p>
+  </header>
+
+  <div class="grid">
+    <!-- ===== INPUT ===== -->
+    <div class="panel">
+      <h2>入力パラメータ</h2>
+
+      <div class="ctrl"><label>スパン S <b><span id="vSpan">6.0</span> m</b></label>
+        <input type="range" id="span" min="2" max="20" step="0.5" value="6"></div>
+
+      <div class="ctrl"><label>ライズ比 f = h/S <b><span id="vF">0.50</span></b></label>
+        <input type="range" id="fr" min="0.06" max="0.50" step="0.01" value="0.50"></div>
+
+      <div class="ctrl"><label>竹 外径 D <b><span id="vD">50</span> mm</b></label>
+        <input type="range" id="dia" min="30" max="120" step="2" value="50"></div>
+
+      <div class="ctrl"><label>竹 肉厚 t <b><span id="vT">8</span> mm</b></label>
+        <input type="range" id="th" min="3" max="15" step="0.5" value="8"></div>
+
+      <div class="ctrl"><label>部材間隔 s <b><span id="vS">0.6</span> m</b></label>
+        <input type="range" id="sp" min="0.3" max="1.5" step="0.05" value="0.6"></div>
+
+      <div class="ctrl"><label>ヤング率 E <b><span id="vE">15</span> GPa</b></label>
+        <input type="range" id="em" min="8" max="18" step="0.5" value="15">
+        <div class="chk" style="margin-top:2px;color:var(--faint);font-size:11px">乾燥竹 ≈15–18 / 湿潤時は剛性低下</div></div>
+
+      <div class="ctrl"><label>垂直積雪量 <b><span id="vSnow">50</span> cm</b></label>
+        <input type="range" id="snow" min="10" max="300" step="5" value="50"></div>
+
+      <div class="ctrl"><label>地域区分（単位荷重）</label>
+        <div class="seg" id="region">
+          <button data-v="20" class="on">一般 20 N/m²·cm</button>
+          <button data-v="30">多雪 30 N/m²·cm</button>
+        </div></div>
+
+      <div class="ctrl"><label>構造形式</label>
+        <div class="seg" id="stype">
+          <button data-v="geo" class="on">ジオデシック</button>
+          <button data-v="grid">グリッドシェル</button>
+        </div></div>
+
+      <label class="chk"><input type="checkbox" id="shape" checked>
+        屋根形状係数 μb を適用（勾配滑落）</label>
+    </div>
+
+    <!-- ===== OUTPUT ===== -->
+    <div>
+      <div class="cards" id="cards"></div>
+
+      <div class="viz">
+        <div class="vbox">
+          <h3>ドーム断面 / 応力ゾーン</h3>
+          <div id="dome"></div>
+          <div class="legend">
+            <span><i style="background:var(--comp)"></i>フープ圧縮</span>
+            <span><i style="background:var(--tens)"></i>フープ引張</span>
+            <span><i style="background:var(--shed)"></i>雪滑落帯 φ&gt;60°</span>
+          </div>
+        </div>
+        <div class="vbox">
+          <h3>薄膜力分布 N(φ) [kN/m]</h3>
+          <canvas id="chartN" height="200"></canvas>
+          <div class="legend">
+            <span><i style="background:var(--comp)"></i>子午線力 N<sub>φ</sub></span>
+            <span><i style="background:var(--tens)"></i>フープ力 N<sub>θ</sub></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="notes" id="notes"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const state = { region:20, stype:'geo' };
+
+// segmented buttons
+function bindSeg(id, key, cast){
+  $(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    $(id).querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); state[key]=cast(b.dataset.v); recompute();
+  });
+}
+bindSeg('region','region',Number);
+bindSeg('stype','stype',String);
+
+['span','fr','dia','th','sp','em','snow'].forEach(id=>$(id).oninput=recompute);
+$('shape').onchange=recompute;
+
+// ---- physics ----
+function muB(beta){ // 屋根形状係数, beta=勾配[rad]
+  const d = beta*180/Math.PI;
+  if(d>=60) return 0;
+  return Math.sqrt(Math.cos(1.5*beta));
+}
+
+function compute(){
+  const S=+$('span').value, f=+$('fr').value, D=+$('dia').value, t=+$('th').value;
+  const s=+$('sp').value, E=+$('em').value*1e9, depth=+$('snow').value;
+  const unit=state.region, useShape=$('shape').checked, type=state.stype;
+
+  const a=S/2, h=f*S;
+  const R=(a*a+h*h)/(2*h);            // 曲率半径
+  const phiBase=Math.asin(Math.min(1,a/R)); // 余緯度（基部）
+  const d=D-2*t;
+  const A=Math.PI/4*(D*D-d*d)/1e6;    // m²
+  const I=Math.PI/64*(Math.pow(D,4)-Math.pow(d,4))/1e12; // m⁴
+  const fc=40e6;                      // 圧縮許容(目安)
+
+  const p0=unit*depth;                // N/m² (水平投影, 平坦面)
+  // membrane forces use p0 (uniform projected load, 教科書解)
+  const Nphi_crown = p0*R/2;          // N/m 圧縮(絶対値)
+  // 部材軸力(最圧縮=頂部付近) ; 形状係数は局所μbを乗じる
+  const muCrown = useShape ? muB(0) : 1;   // =1
+  const Pcomp = Nphi_crown*s*muCrown; // N/部材
+
+  // 部材長・座屈
+  const arc=R*phiBase;
+  const nRings=Math.max(2,Math.round(arc/s));
+  const dphi=phiBase/nRings;
+  const segLen=R*dphi;                // m
+  const Leff = type==='geo' ? segLen : 2*segLen; // grid shellは座屈長増
+  const Pcr=Math.PI*Math.PI*E*I/(Leff*Leff);     // N
+  const SF=Pcr/Math.max(Pcomp,1e-9);
+  const sigma=Pcomp/A;                // Pa
+
+  // 基部フープ & 引張リング
+  const Ntheta_base = -(p0*R/2)*Math.cos(2*phiBase); // +で引張
+  const thrust = Nphi_crown*Math.cos(phiBase);       // N/m 水平
+  const ringT = thrust*a;             // N (引張リング張力)
+
+  // 総積雪荷重(滑落考慮で投影面数値積分)
+  let W=0,N=200;
+  for(let i=0;i<N;i++){
+    const ph=(i+0.5)/N*phiBase;
+    const mu=useShape?muB(ph):1;
+    const r=R*Math.sin(ph);
+    const dr=R*Math.cos(ph)*(phiBase/N);
+    W += p0*mu*2*Math.PI*r*Math.abs(dr); // 投影リング dA=2πr dr
+  }
+
+  // 跳躍座屈リスク(浅さで定性判定)
+  let snap;
+  if(f>=0.20) snap={t:'低',c:'ok'};
+  else if(f>=0.12) snap={t:'中',c:'warn'};
+  else snap={t:'高',c:'bad'};
+
+  return {S,a,h,R,phiBase,A,I,D,t,s,E,p0,Nphi_crown,Pcomp,Ntheta_base,
+          segLen,Leff,Pcr,SF,sigma,fc,ringT,thrust,W,snap,nRings,type,useShape};
+}
+
+// ---- render cards ----
+function renderCards(r){
+  const sfStat = r.SF>=3?'ok':r.SF>=1.5?'warn':'bad';
+  const sigStat = r.sigma<r.fc*0.4?'ok':r.sigma<r.fc?'warn':'bad';
+  const cards=[
+    ['曲率半径 R', r.R.toFixed(2),'m',''],
+    ['基部余緯度 φ', (r.phiBase*180/Math.PI).toFixed(1),'°',''],
+    ['総積雪荷重 W', (r.W/1000).toFixed(1),'kN',''],
+    ['部材圧縮力 P', (r.Pcomp/1000).toFixed(2),'kN',''],
+    ['座屈安全率 SF', r.SF.toFixed(1),'', sfStat,
+       sfStat==='ok'?'安全':sfStat==='warn'?'要検討':'危険'],
+    ['圧縮応力 σ', (r.sigma/1e6).toFixed(2),'MPa', sigStat,
+       (100*r.sigma/r.fc).toFixed(0)+'% fc'],
+    ['引張リング張力 T', (r.ringT/1000).toFixed(1),'kN','',],
+    ['跳躍座屈リスク', r.snap.t,'', r.snap.c],
+  ];
+  $('cards').innerHTML = cards.map(c=>{
+    const cls = c[3]? `card flag s-${c[3]}` : 'card';
+    const bd = c[4]? `<span class="badge b-${c[3]}">${c[4]}</span>`:'';
+    return `<div class="${cls}"><div class="k">${c[0]}</div>
+      <div class="v">${c[1]}<span class="u"> ${c[2]}</span>${bd}</div></div>`;
+  }).join('');
+}
+
+// ---- dome cross-section SVG ----
+function renderDome(r){
+  const W=340,H=300,cx=W/2,padTop=46,padBot=40;
+  const drawH=H-padTop-padBot;
+  // scale: width spans 2a, height spans h
+  const maxW=W-60;
+  const scale=Math.min(maxW/(2*r.a), drawH/r.h);
+  const x=ph=> cx + r.R*Math.sin(ph)*scale;
+  const y=ph=> padTop + (r.R*Math.cos(0)-r.R*Math.cos(ph))*scale; // crown at top
+  // build arc path both sides, colored by hoop sign
+  const NS=60; let segs='';
+  for(let i=0;i<NS;i++){
+    const p1=i/NS*r.phiBase, p2=(i+1)/NS*r.phiBase;
+    const Nth=-Math.cos(2*p1); // sign only
+    const beta=p1; const shed=$('shape').checked&&beta*180/Math.PI>=60;
+    const col= shed? 'var(--shed)' : (Nth<0? 'var(--comp)':'var(--tens)');
+    // right side
+    segs+=`<path d="M${x(p1)} ${y(p1)} A${r.R*scale} ${r.R*scale} 0 0 1 ${x(p2)} ${y(p2)}" stroke="${col}" stroke-width="3" fill="none"/>`;
+    // left side (mirror)
+    const xl=ph=>cx-(x(ph)-cx);
+    segs+=`<path d="M${xl(p1)} ${y(p1)} A${r.R*scale} ${r.R*scale} 0 0 0 ${xl(p2)} ${y(p2)}" stroke="${col}" stroke-width="3" fill="none"/>`;
+  }
+  // base line + tension ring
+  const yb=y(r.phiBase), xr=x(r.phiBase), xl=cx-(xr-cx);
+  // snow arrows on loaded cap
+  let arrows='';
+  for(let i=-3;i<=3;i++){
+    const ph=Math.abs(i)/3.2*r.phiBase*0.85;
+    const beta=ph; if($('shape').checked&&beta*180/Math.PI>=60) continue;
+    const px=cx+ (i/3)*r.a*scale*0.9;
+    const surfY=padTop + (r.R - Math.sqrt(Math.max(0,r.R*r.R-Math.pow((px-cx)/scale,2))))*scale;
+    arrows+=`<line x1="${px}" y1="${surfY-26}" x2="${px}" y2="${surfY-6}" stroke="#9fb0c8" stroke-width="1.4"/>
+      <path d="M${px-3} ${surfY-11} L${px} ${surfY-5} L${px+3} ${surfY-11}" stroke="#9fb0c8" stroke-width="1.4" fill="none"/>`;
+  }
+  // thrust arrows at base
+  const thr=`<line x1="${xr}" y1="${yb}" x2="${xr+26}" y2="${yb}" stroke="var(--tens)" stroke-width="1.6"/>
+    <path d="M${xr+20} ${yb-3} L${xr+26} ${yb} L${xr+20} ${yb+3}" stroke="var(--tens)" stroke-width="1.6" fill="none"/>
+    <line x1="${xl}" y1="${yb}" x2="${xl-26}" y2="${yb}" stroke="var(--tens)" stroke-width="1.6"/>
+    <path d="M${xl-20} ${yb-3} L${xl-26} ${yb} L${xl-20} ${yb+3}" stroke="var(--tens)" stroke-width="1.6" fill="none"/>`;
+  $('dome').innerHTML=`<svg viewBox="0 0 ${W} ${H}">
+    <line x1="40" y1="${yb}" x2="${W-40}" y2="${yb}" stroke="var(--line)" stroke-dasharray="3 4"/>
+    ${arrows}${segs}
+    <line x1="${xl}" y1="${yb}" x2="${xr}" y2="${yb}" stroke="var(--tens)" stroke-width="2.5"/>
+    ${thr}
+    <circle cx="${cx}" cy="${padTop}" r="2.5" fill="#9fb0c8"/>
+    <text x="${cx+8}" y="${padTop+4}" fill="var(--faint)" font-size="10" font-family="monospace">頂部 φ=0</text>
+    <text x="${cx}" y="${yb+18}" fill="var(--tens)" font-size="10" font-family="monospace" text-anchor="middle">引張リング T=${(r.ringT/1000).toFixed(1)}kN</text>
+    <text x="${xr+8}" y="${yb-8}" fill="var(--tens)" font-size="9.5" font-family="monospace">スラスト</text>
+  </svg>`;
+}
+
+// ---- membrane chart ----
+function renderChart(r){
+  const cv=$('chartN'), dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth, h=200;
+  cv.width=w*dpr; cv.height=h*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr);
+  g.clearRect(0,0,w,h);
+  const padL=44,padR=12,padT=12,padB=26, pw=w-padL-padR, ph=h-padT-padB;
+  // data
+  const N=80, deg=r.phiBase*180/Math.PI;
+  let Nphi=[],Nth=[];
+  for(let i=0;i<=N;i++){
+    const phi=i/N*r.phiBase;
+    Nphi.push(-r.p0*r.R/2/1000);               // const compression
+    Nth.push(-(r.p0*r.R/2)*Math.cos(2*phi)/1000);
+  }
+  const all=[...Nphi,...Nth]; let mn=Math.min(...all),mx=Math.max(...all);
+  if(mx-mn<1e-6){mx+=1;mn-=1;} const padv=(mx-mn)*0.12; mn-=padv;mx+=padv;
+  const X=i=>padL+i/N*pw, Y=v=>padT+ph-(v-mn)/(mx-mn)*ph;
+  // grid + axes
+  g.strokeStyle='#283142';g.lineWidth=1;g.font='10px IBM Plex Mono';g.fillStyle='#5a677b';
+  for(let k=0;k<=4;k++){const v=mn+(mx-mn)*k/4,yy=Y(v);
+    g.beginPath();g.moveTo(padL,yy);g.lineTo(w-padR,yy);g.stroke();
+    g.textAlign='right';g.fillText(v.toFixed(1),padL-6,yy+3);}
+  // zero line
+  if(mn<0&&mx>0){g.strokeStyle='#3a4660';g.beginPath();g.moveTo(padL,Y(0));g.lineTo(w-padR,Y(0));g.stroke();}
+  g.textAlign='center';
+  [0,45,Math.round(deg)].forEach(dd=>{const xx=padL+dd/deg*pw; if(xx<=w-padR){g.fillText(dd+'°',xx,h-8);}});
+  // 45° marker (tension transition)
+  if(deg>45){const xx=padL+45/deg*pw;g.strokeStyle='#3a466088';g.setLineDash([2,3]);
+    g.beginPath();g.moveTo(xx,padT);g.lineTo(xx,padT+ph);g.stroke();g.setLineDash([]);}
+  // curves
+  const plot=(arr,col)=>{g.strokeStyle=col;g.lineWidth=2;g.beginPath();
+    arr.forEach((v,i)=>i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v)));g.stroke();};
+  plot(Nphi,'#4ec9d4'); plot(Nth,'#f0a23a');
+}
+
+// ---- notes ----
+function renderNotes(r){
+  const fmt=(v,n=2)=>v.toFixed(n);
+  $('notes').innerHTML=`
+  <b>計算根拠</b>　球冠（曲率半径 R=<code>${fmt(r.R)} m</code>）の薄膜理論。積雪は水平投影荷重として
+  <code>p₀=${(r.p0/1000).toFixed(2)} kN/m²</code>。子午線力 <code>N_φ=−p₀R/2</code>（一定圧縮）、
+  フープ力 <code>N_θ=−(p₀R/2)cos2φ</code> → φ&gt;45°で引張に転移（${(r.phiBase*180/Math.PI).toFixed(0)}°基部で
+  ${r.Ntheta_base>0?'引張':'圧縮'} ${Math.abs(r.Ntheta_base/1000).toFixed(2)} kN/m）。<br>
+  <b>座屈</b>　部材 φ${r.D}×t${r.t} → A=<code>${(r.A*1e6).toFixed(0)} mm²</code>,
+  I=<code>${(r.I*1e12).toExponential(2)} mm⁴</code>。${r.type==='geo'?'三角分割（K=1, 座屈長=1パネル）':'グリッドシェル（座屈長=2パネル, 連続材で拘束弱）'}、
+  オイラー <code>P_cr=π²EI/L²=${(r.Pcr/1000).toFixed(1)} kN</code> ÷ 圧縮力 ${(r.Pcomp/1000).toFixed(2)} kN
+  → SF=${r.SF.toFixed(1)}。<br>
+  <b>跳躍座屈</b>　ライズ比 f=h/S=${(+$('fr').value).toFixed(2)} による定性判定（浅いほど吹き溜まり集中で突然反転）。
+  ${r.snap.c==='bad'?'⚠ 浅すぎ — 補強リング/ライズ増を推奨。':r.snap.c==='warn'?'△ 非対称荷重を別途FEM確認。':'深く湾曲しスナップに有利。'}<br>
+  <b>留意</b>　薄膜解は均一積雪・無曲げの理想化。実設計では ①接合部（竹ドーム最弱点・割裂/滑り）②基部引張リング ${(r.ringT/1000).toFixed(1)}kN
+  ③湿潤によるE低下＝座屈荷重直下 ④非対称ドリフトのFEM が支配。これは1次スクリーニングです。`;
+}
+
+// labels
+function recompute(){
+  $('vSpan').textContent=(+$('span').value).toFixed(1);
+  $('vF').textContent=(+$('fr').value).toFixed(2);
+  $('vD').textContent=$('dia').value;
+  $('vT').textContent=(+$('th').value).toFixed(1);
+  $('vS').textContent=(+$('sp').value).toFixed(2);
+  $('vE').textContent=(+$('em').value).toFixed(1);
+  $('vSnow').textContent=$('snow').value;
+  const r=compute();
+  renderCards(r); renderDome(r); renderChart(r); renderNotes(r);
+}
+window.addEventListener('resize',()=>renderChart(compute()));
+recompute();
+</script>
+</body>
+</html>

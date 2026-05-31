@@ -32,9 +32,12 @@ def parse_args():
     ap.add_argument("--out", default="output/sim/mpm_snow.png")
     ap.add_argument("--blend", default="")
     ap.add_argument("--culm-d", type=float, default=0.10)
-    ap.add_argument("--voxel", type=float, default=0.06, help="ボクセルサイズ[m]")
-    ap.add_argument("--radius", type=float, default=0.13, help="粒子半径=結合距離[m]")
+    ap.add_argument("--voxel", type=float, default=0.05, help="ボクセルサイズ[m]")
+    ap.add_argument("--radius", type=float, default=0.20, help="粒子半径=結合距離[m]（大=滑らか）")
+    ap.add_argument("--smooth", type=int, default=18, help="スムーズ反復回数（大=滑らか）")
     ap.add_argument("--animate", action="store_true", help="全.ply列をアニメ化")
+    ap.add_argument("--frame", type=int, default=-1,
+                    help="静止画にする.plyの番号（-1=最終）")
     ap.add_argument("--res", type=int, default=1400)
     ap.add_argument("--samples", type=int, default=64)
     return ap.parse_args(argv)
@@ -78,7 +81,8 @@ def surfacing_nodes(obj, voxel, radius, mat):
     m2p = nodes.new("GeometryNodeMeshToPoints"); m2p.location = (-400, 0)
     p2v = nodes.new("GeometryNodePointsToVolume"); p2v.location = (-150, 0)
     v2m = nodes.new("GeometryNodeVolumeToMesh"); v2m.location = (150, 0)
-    setmat = nodes.new("GeometryNodeSetMaterial"); setmat.location = (380, 0)
+    shade = nodes.new("GeometryNodeSetShadeSmooth"); shade.location = (320, 0)
+    setmat = nodes.new("GeometryNodeSetMaterial"); setmat.location = (470, 0)
     # Points to Volume 設定（ボクセルサイズ・半径）
     try:
         p2v.resolution_mode = "VOXEL_SIZE"
@@ -96,9 +100,17 @@ def surfacing_nodes(obj, voxel, radius, mat):
     links.new(n_in.outputs[0], m2p.inputs["Mesh"])
     links.new(m2p.outputs["Points"], p2v.inputs["Points"])
     links.new(p2v.outputs["Volume"], v2m.inputs["Volume"])
-    links.new(v2m.outputs["Mesh"], setmat.inputs["Geometry"])
+    links.new(v2m.outputs["Mesh"], shade.inputs["Geometry"])
+    links.new(shade.outputs["Geometry"], setmat.inputs["Geometry"])
     links.new(setmat.outputs["Geometry"], n_out.inputs[0])
     return mod
+
+
+def add_smooth(obj, iterations):
+    """生成された雪面を頂点スムーズで滑らかにする。"""
+    sm = obj.modifiers.new("Smooth", type="SMOOTH")
+    sm.iterations = iterations
+    sm.factor = 1.0
 
 
 def main():
@@ -134,7 +146,7 @@ def main():
     plys = sorted(glob.glob(os.path.join(args.ply_dir, "snow_*.ply")))
     if not plys:
         print("[mpm] .ply が見つかりません"); return
-    target = plys if args.animate else [plys[-1]]
+    target = plys if args.animate else [plys[args.frame]]
     sc.frame_start, sc.frame_end = 1, len(target)
 
     snow_objs = []
@@ -143,6 +155,7 @@ def main():
         ob = bpy.context.active_object
         ob.name = f"Snow_{idx:04d}"
         surfacing_nodes(ob, args.voxel, args.radius, mat_snow)
+        add_smooth(ob, args.smooth)
         snow_objs.append(ob)
         if args.animate:                              # フレーム idx+1 のみ表示
             for fr, hidden in ((idx, True), (idx + 1, False), (idx + 2, True)):

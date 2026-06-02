@@ -1,8 +1,130 @@
 # 竹ジオデシックドーム 設計・構造解析・3Dモデリング ツールキット
 
 孟宗竹（Moso, *Phyllostachys edulis*）で**格子状のドーム**を作るための、
-**幾何生成 → 構造計算 → 設計照査 → 3D可視化 → Blender出力**を一気通貫で行う
+**幾何生成 → 構造計算 → 設計照査 → 3D可視化 → Blender物理シミュレーション**を一気通貫で行う
 Python ツールキットです。福井市の積雪・風荷重（建築基準法）で実際に検証できます。
+
+---
+
+## 🎬 全成果物アクセスガイド
+
+### 📊 インタラクティブWebダッシュボード（ブラウザで開く）
+
+```bash
+open output/dome_dashboard.html       # 11構成の比較ダッシュボード（並び替え・サマリ統計）
+open output/dome_interactive.html     # 1ドームの3Dビュー（軸力分布・回転可能）
+```
+
+| ファイル | 内容 |
+|---|---|
+| [`output/dome_dashboard.html`](output/dome_dashboard.html) | **格子密度×サイズ 比較ダッシュボード**: φ2m(v1=15本)〜φ12m(v4=240本)の11構成、用途タグ、並び替えボタン、サマリ統計 |
+| [`output/dome_interactive.html`](output/dome_interactive.html) | 軸力分布・荷重ケース切替の3Dビュー |
+
+### 🎥 シミュレーション動画（QuickTimeで開く）
+
+```bash
+open output/sim/collapse_simulation.mp4         # 🏆 雪で潰れる崩壊シミュ（おすすめ）
+open output/sim/bamboo_vinyl_snow_v2.mp4        # 竹ビニールドーム雪積もり
+open output/sim/stress_animation.mp4            # 構造応力の色変化アニメ
+open output/sim/presentation.mp4                # 統合プレゼン動画
+open output/sim/snow_accumulation.mp4           # 草原→雪原シンプル版
+```
+
+| 動画 | 内容 | 長さ |
+|---|---|---|
+| `collapse_simulation.mp4` | **健全→軋み→崩壊** の3段階崩壊（180フレーム） | 7.5秒 |
+| `bamboo_vinyl_snow_v2.mp4` | 竹ビニールドームに雪が徐々に積もる | 6秒 |
+| `stress_animation.mp4` | 部材が緑→黄→赤に色変化（利用率可視化） | 4秒 |
+| `presentation.mp4` | 統合版（雪積もり+応力） | 10秒 |
+
+### 🎨 Blender プロジェクト（編集可能）
+
+```bash
+open -a Blender output/sim/collapse.blend            # 崩壊シミュレーション
+open -a Blender output/sim/bvs2.blend                # 竹ビニール雪積もり
+open -a Blender output/sim/stress.blend              # 応力色変化
+open -a Blender output/sim/mpm_snow_anim.blend       # MPM粘着雪
+open -a Blender output/sim/snow_color.blend          # シンプル雪積もり
+```
+
+> **重要**: Blender でファイルを開いたら **`Z` キー → マテリアル表示** で色が出ます
+
+### 📚 ドキュメント
+
+- [`docs/MANUAL.md`](docs/MANUAL.md) - Blender操作マニュアル（開き方・動かし方・トラブル対応）
+- [`docs/PRESENTATION.md`](docs/PRESENTATION.md) - プレゼンストーリー・質問対策・数値例
+- [`docs/gif/`](docs/gif/) - ハイライトGIF集（プレゼン挿入用）
+
+### 🖼 GIF（プレゼン素材）
+
+```bash
+docs/gif/collapse_simulation.gif       # 崩壊（ハイライト）
+docs/gif/bamboo_vinyl_snow_v2.gif      # 雪積もり
+docs/gif/stress_animation.gif          # 応力
+docs/gif/snow_accumulation.gif         # 草原→雪原
+docs/gif/presentation_highlight.gif    # 15秒ハイライト
+```
+
+### 📐 なぜ格子が多い方が積雪耐力が高いか（理論）
+
+ダッシュボードでは v=1（15本）→ v=4（240本）と密にするほど積雪耐力が劇的に上がります。これは**3つの構造力学の原理**による必然的な結果です：
+
+#### 1️⃣ Eulerの座屈式（部材長 L の2乗に反比例）
+
+```
+P_cr = π² · E · I / (KL)²
+```
+- 部材長 L が**半分**になると、座屈耐力 P_cr は**4倍**に
+- v=1（部材長 4.21m）→ v=3（1.58m）で長さ約2.7倍短く → 座屈耐力**約7倍**
+- 実装: `src/design.py` の `member_capacity()` 関数
+
+#### 2️⃣ 荷重を分担する部材数の増加
+
+| v | 部材数 | 1本あたり荷重 |
+|---|---|---|
+| 1 | 15 | 100% |
+| 2 | 60 | 25% |
+| 3 | 135 | 11% |
+| 4 | 240 | 6% |
+
+#### 3️⃣ 静的不静定度・三角形ラチスの剛性
+
+- 細分化＝節点数増加→**剛体運動の自由度が減り**、変形が小さくなる
+- 三角形ラチスは面内せん断剛性が高い（ピン接合でも自立）
+- ジオデシック幾何＝面に近い均等分布→**応力集中が少ない**
+
+#### 🎯 設計指針
+
+- **小径**（φ2-4m）→ v=1-2 で十分（コスト最小）
+- **中径**（φ5-8m）→ v=3 が標準
+- **大径**（φ10m+）→ v=4 必須（座屈リスク）
+- **豪雪地**（福井）→ さらに v を上げる or 断面拡大 or 接合補強
+
+> 完全な理論的裏付けは「4. 工学的根拠」セクションを参照（ISO 22156、AIJ規準、Stomakhin et al. 2013）
+
+### 🔧 再生成コマンド
+
+```bash
+# ダッシュボード再生成
+python3 -c "import sys; sys.path.insert(0,'.'); from src.dashboard import build_dashboard; build_dashboard()"
+
+# 崩壊シミュレーション
+/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup \
+  --python blender/bamboo_vinyl_snow.py -- \
+  --geo output/sim/dome_snow_scene.json \
+  --out output/sim/collapse_ --blend output/sim/collapse.blend \
+  --snow-m 1.5 --animate 180 --collapse-defl 0.55 --falling 6000
+
+# 応力アニメ（時系列データから）
+python3 tools/gen_stress_timeline.py --out output/sim/stress_timeline.json
+/Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup \
+  --python blender/stress_animation.py -- \
+  --geo output/sim/dome_snow_scene.json \
+  --stress output/sim/stress_timeline.json \
+  --out output/sim/stress_ --blend output/sim/stress.blend --animate 100
+```
+
+---
 
 ```
                     ╱╲╱╲╱╲

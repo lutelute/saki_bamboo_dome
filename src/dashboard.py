@@ -83,13 +83,20 @@ def _bar(values, labels, title, ylab, hline=None, colors=None, incl=False) -> st
 # 既定の比較構成 (frequency=格子密度, radius=サイズ)。
 # 疎な格子(v=1=15本, v=2=60本)から密(v=4=240本)まで、サイズも変えて並べる。
 DEFAULT_CONFIGS = [
-    (1, 3.0),   # 15本  最小格子（疎）
-    (2, 3.0),   # 60本
-    (2, 4.0),   # 60本
-    (3, 3.0),   # 135本
-    (3, 4.0),   # 135本
-    (3, 5.0),   # 135本
-    (4, 5.0),   # 240本 密
+    # 小径・疎格子（テント・遊具サイズ）
+    (1, 1.0),   # φ2m, 15本  最小格子・最小サイズ
+    (1, 1.5),   # φ3m, 15本
+    (2, 1.5),   # φ3m, 60本
+    (2, 2.0),   # φ4m, 60本
+    # 中径
+    (2, 3.0),   # φ6m, 60本
+    (3, 2.5),   # φ5m, 135本
+    (3, 3.0),   # φ6m, 135本
+    (3, 4.0),   # φ8m, 135本
+    # 大径・密格子（建築サイズ）
+    (3, 5.0),   # φ10m, 135本
+    (4, 5.0),   # φ10m, 240本 密
+    (4, 6.0),   # φ12m, 240本
 ]
 
 
@@ -118,6 +125,20 @@ def build_dashboard(out_path: str = "output/dome_dashboard.html",
                      hline=_FUKUI_SNOW, colors=cap_colors, incl="cdn")
     chart_len = _bar(lens, labels, "必要な総竹長", "m", colors="#4ec9d4")
 
+    # 用途を直径から推測
+    def usage_label(d):
+        if d <= 2.5: return "🏕 テント・遊具"
+        if d <= 4.5: return "🛖 1人用住居・物置"
+        if d <= 7.5: return "🏠 2-4人住居"
+        if d <= 10:  return "🏛 集会・温室"
+        return "🏟 大型施設"
+
+    # サマリ統計
+    n_ok = sum(1 for c in caps if c >= _FUKUI_SNOW)
+    n_ng = len(reps) - n_ok
+    avg_cap = sum(caps) / len(caps)
+    avg_len = sum(lens) / len(lens)
+
     # 各ドームのカード
     cards = []
     for idx, (freq, r, rep) in enumerate(reps):
@@ -130,19 +151,29 @@ def build_dashboard(out_path: str = "output/dome_dashboard.html",
         verdict = ("<span class='ok'>✓ 福井の積雪OK</span>" if ok
                    else "<span class='ng'>✗ 福井の積雪NG</span>")
         density = {1: "最小・疎", 2: "粗", 3: "標準", 4: "密"}.get(freq, "")
+        usage = usage_label(2 * r)
+        # 福井設計積雪に対する余裕度（0=ぎりぎり、>1=余裕、<1=不足）
+        margin = cap / _FUKUI_SNOW
+        margin_label = f"{margin:.2f}倍"
+        sno_d_cm = cap / 0.30
         card = f"""
-        <div class="card">
+        <div class="card" data-cap="{cap}" data-len="{q['total_length_m']}" data-util="{s['max_utilization']}">
           <h3>v{freq} φ{2*r:.0f}m ドーム　{verdict}</h3>
+          <div class="usage">{usage}</div>
           <div class="view">{view}</div>
           <table>
             <tr><td>格子密度 (frequency)</td><td>v={freq}（{density}）</td></tr>
             <tr><td>直径 / 高さ</td><td>{2*r:.0f} m / {m['dome_height']:.1f} m</td></tr>
-            <tr><td>部材(竹) / 節点 / 支点</td><td><b>{m['n_members']}本</b> / {m['n_nodes']} / {m['n_supports']}</td></tr>
+            <tr><td>水平投影 / 表面積</td><td>{q['plan_area_m2']:.0f} / {q['surface_area_m2']:.0f} m²</td></tr>
+            <tr><td>部材(竹) / 節点</td><td><b>{m['n_members']}本</b> / {m['n_nodes']}</td></tr>
             <tr><td>平均部材長</td><td>{m['member_len_mean']:.2f} m</td></tr>
             <tr><td>総竹長</td><td>{q['total_length_m']:.0f} m（6m材 {q['n_culms_6m']}本）</td></tr>
-            <tr><td>自重 / 概算</td><td>{q['total_weight_kg']:.0f} kg / {q['est_cost_yen']/1e4:.1f}万円</td></tr>
+            <tr><td>自重</td><td>{q['total_weight_kg']:.0f} kg</td></tr>
+            <tr><td>概算費用</td><td>{q['est_cost_yen']/1e4:.1f}万円</td></tr>
             <tr><td>D+S 最大利用率</td><td class="{'ng' if s['max_utilization']>1 else 'ok'}">{s['max_utilization']:.2f}</td></tr>
-            <tr><td><b>積雪耐力</b></td><td class="{'ok' if ok else 'ng'}"><b>{cap:.2f} kN/m²</b>（≒積雪{cap/0.30:.0f}cm）</td></tr>
+            <tr><td><b>積雪耐力</b></td><td class="{'ok' if ok else 'ng'}"><b>{cap:.2f} kN/m²</b></td></tr>
+            <tr><td>≒ 限界積雪深</td><td>{sno_d_cm:.0f} cm</td></tr>
+            <tr><td>福井設計に対する余裕</td><td class="{'ok' if ok else 'ng'}">{margin_label}</td></tr>
           </table>
         </div>"""
         cards.append(card)
@@ -150,6 +181,7 @@ def build_dashboard(out_path: str = "output/dome_dashboard.html",
     html = _TEMPLATE.format(
         n=len(reps), sec=f"φ{section.outer_d*1e3:.0f}×t{section.wall_t*1e3:.0f}",
         eta=joint_efficiency, fukui=_FUKUI_SNOW,
+        n_ok=n_ok, n_ng=n_ng, avg_cap=avg_cap, avg_len=avg_len,
         chart_cap=chart_cap, chart_len=chart_len, cards="\n".join(cards))
     with open(out_path, "w") as f:
         f.write(html)
@@ -183,12 +215,34 @@ td:first-child{{color:var(--dim)}}
 td:last-child{{text-align:right;font-family:"IBM Plex Mono",monospace}}
 .ok{{color:var(--ok)}}.ng{{color:var(--ng)}}
 .legend{{color:var(--dim);font-size:12px;margin-top:18px;border-top:1px solid var(--line);padding-top:12px}}
+.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}}
+.stat{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px}}
+.stat .v{{font-size:22px;font-weight:600;font-family:"IBM Plex Mono",monospace}}
+.stat .l{{font-size:11px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}}
+.usage{{font-size:12px;color:var(--cyan);margin-bottom:6px;font-weight:500}}
+.controls{{margin-top:14px;display:flex;gap:8px;align-items:center;font-size:13px;color:var(--dim)}}
+.controls button{{background:var(--panel);border:1px solid var(--line);color:var(--ink);
+padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}}
+.controls button:hover{{border-color:var(--cyan)}}
+.controls button.active{{background:var(--cyan);color:#0c1016;border-color:var(--cyan)}}
 </style></head><body>
 <header>
 <h1>🎍 竹ジオデシックドーム　格子密度×サイズ 比較ダッシュボード</h1>
 <p>{n}構成を比較（格子密度 v=1〜4＝部材15〜240本・断面 竹{sec}・接合効率 η={eta}）。
 竹は実直径のチューブで描画。色分けは D+S（自重＋積雪）の利用率＝緑(余裕)→黄→赤(許容超過)。
 判定は福井市の設計積雪 {fukui:.1f} kN/m²（多雪区域・垂直積雪140cm）に対する崩壊余裕。</p>
+<div class="stats">
+<div class="stat"><div class="v ok">{n_ok}</div><div class="l">福井OK 構成</div></div>
+<div class="stat"><div class="v ng">{n_ng}</div><div class="l">福井NG 構成</div></div>
+<div class="stat"><div class="v">{avg_cap:.1f} kN/m²</div><div class="l">平均積雪耐力</div></div>
+<div class="stat"><div class="v">{avg_len:.0f} m</div><div class="l">平均総竹長</div></div>
+</div>
+<div class="controls">
+並び替え:
+<button onclick="sortCards('cap', this)" class="active">積雪耐力↓</button>
+<button onclick="sortCards('len', this)">総竹長↑</button>
+<button onclick="sortCards('util', this)">利用率↑</button>
+</div>
 </header>
 <section class="charts">
 <div>{chart_cap}</div>
@@ -200,4 +254,15 @@ td:last-child{{text-align:right;font-family:"IBM Plex Mono",monospace}}
 <p class="legend">格子密度 v が小さいほど部材は少なく(疎)・1本が長くなり座屈しやすく、v が大きいほど部材は多く(密)・短く強い。
 小径ほど積雪荷重も小さく安全側。大径・疎格子では断面拡大(φ125以上)・frequency増・接合補強が必要になります。
 竹は実直径φ100mmのチューブで描画。各3Dビューはドラッグで回転できます。</p>
+<script>
+function sortCards(key, btn) {{
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const grid = document.querySelector('.grid');
+  const cards = Array.from(grid.children);
+  const dir = key === 'cap' ? -1 : 1;  // 耐力は降順、長さ・利用率は昇順
+  cards.sort((a, b) => dir * (parseFloat(a.dataset[key]) - parseFloat(b.dataset[key])));
+  cards.forEach(c => grid.appendChild(c));
+}}
+</script>
 </body></html>"""

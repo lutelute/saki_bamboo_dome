@@ -109,8 +109,8 @@ def main():
     shell.collision.thickness_outer = 0.04
     shell.collision.damping = 0.5
 
-    bpy.ops.mesh.primitive_grid_add(x_subdivisions=70, y_subdivisions=70,
-                                    size=size * 1.45, location=(cx, cy, top + 0.6))
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=120, y_subdivisions=120,
+                                    size=size * 2.6, location=(cx, cy, top + 0.4))
     vinyl = bpy.context.active_object
     vinyl.name = "Vinyl"
     vinyl.data.materials.append(mat_vinyl)

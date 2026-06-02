@@ -341,6 +341,13 @@ def main():
 
     if args.blend:
         sc.frame_set(sc.frame_start if animate else 45)
+        # ビューポートをマテリアル表示に（開いた瞬間に色が出る）
+        for scr in bpy.data.screens:
+            for ar in scr.areas:
+                if ar.type == "VIEW_3D":
+                    for sp in ar.spaces:
+                        if sp.type == "VIEW_3D":
+                            sp.shading.type = "MATERIAL"
         os.makedirs(os.path.dirname(os.path.abspath(args.blend)), exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
         print(f"[scene] blend saved -> {args.blend}")

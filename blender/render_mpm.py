@@ -16,6 +16,7 @@ import sys
 import os
 import json
 import glob
+import math
 import argparse
 
 import bpy
@@ -52,8 +53,42 @@ def make_material(name, rgba, rough=0.5):
     b = principled(mat)
     b.inputs["Base Color"].default_value = rgba
     b.inputs["Roughness"].default_value = rough
-    if name == "Snow" and "Subsurface Weight" in b.inputs:
-        b.inputs["Subsurface Weight"].default_value = 0.2
+    return mat
+
+
+def make_snow_material():
+    """本物の雪: 透け感(サブサーフェス)＋粒状バンプ＋きらめきで豆腐感を消す。"""
+    mat = bpy.data.materials.new("Snow"); mat.use_nodes = True
+    nt = mat.node_tree
+    b = principled(mat)
+    b.inputs["Base Color"].default_value = (0.90, 0.94, 1.0, 1.0)   # わずかに青白い
+    b.inputs["Roughness"].default_value = 0.42
+    if "Subsurface Weight" in b.inputs:
+        b.inputs["Subsurface Weight"].default_value = 0.32          # 雪の透け
+        b.inputs["Subsurface Radius"].default_value = (0.10, 0.12, 0.18)
+        if "Subsurface Scale" in b.inputs:
+            b.inputs["Subsurface Scale"].default_value = 0.03
+    # 細かな粒状バンプ（豆腐のツルツルを壊す）
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 42.0
+    noise.inputs["Detail"].default_value = 8.0
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.22
+    nt.links.new(noise.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    # きらめき: 高周波ノイズの一部で粗さを下げ、雪のキラキラを出す
+    spk = nt.nodes.new("ShaderNodeTexNoise"); spk.inputs["Scale"].default_value = 260.0
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = 0.60
+    ramp.color_ramp.elements[1].position = 0.70
+    nt.links.new(spk.outputs["Fac"], ramp.inputs["Fac"])
+    scl = nt.nodes.new("ShaderNodeMath"); scl.operation = "MULTIPLY"
+    scl.inputs[1].default_value = 0.32
+    sub = nt.nodes.new("ShaderNodeMath"); sub.operation = "SUBTRACT"
+    sub.inputs[0].default_value = 0.42
+    nt.links.new(ramp.outputs["Color"], scl.inputs[0])
+    nt.links.new(scl.outputs["Value"], sub.inputs[1])
+    nt.links.new(sub.outputs["Value"], b.inputs["Roughness"])
     return mat
 
 
@@ -122,8 +157,8 @@ def main():
     sc = bpy.context.scene
 
     mat_bamboo = make_material("Bamboo", (0.30, 0.40, 0.12, 1.0), 0.5)
-    mat_snow = make_material("Snow", (0.93, 0.95, 1.0, 1.0), 0.5)
-    mat_ground = make_material("Ground", (0.5, 0.55, 0.6, 1.0), 0.85)
+    mat_snow = make_snow_material()
+    mat_ground = make_snow_material()      # 地面も雪
 
     # 竹ドーム
     me = bpy.data.meshes.new("Bamboo"); bm = bmesh.new()
@@ -177,11 +212,21 @@ def main():
     cam.rotation_mode = "QUATERNION"
     cam.rotation_quaternion = direction.to_track_quat("-Z", "Y")
     sc.camera = cam
-    sun = bpy.data.lights.new("Sun", type="SUN"); sun.energy = 3.2
-    so = bpy.data.objects.new("Sun", sun); so.rotation_euler = (0.9, 0.2, 0.5)
+    sun = bpy.data.lights.new("Sun", type="SUN"); sun.energy = 3.0
+    sun.color = (1.0, 0.97, 0.92); sun.angle = 0.06    # やわらかい影
+    so = bpy.data.objects.new("Sun", sun); so.rotation_euler = (0.95, 0.15, 0.5)
     bpy.context.collection.objects.link(so)
-    world = bpy.data.worlds.new("W"); sc.world = world; world.use_nodes = True
-    world.node_tree.nodes.get("Background").inputs["Color"].default_value = (0.55, 0.62, 0.72, 1)
+    # 冬の青空ワールド（Nishita sky）
+    world = bpy.data.worlds.new("Winter"); sc.world = world; world.use_nodes = True
+    nt = world.node_tree; bg = nt.nodes.get("Background")
+    try:
+        sky = nt.nodes.new("ShaderNodeTexSky")
+        sky.sky_type = "NISHITA"; sky.sun_elevation = math.radians(32)
+        sky.sun_rotation = math.radians(40)
+        nt.links.new(sky.outputs[0], bg.inputs["Color"])
+        bg.inputs["Strength"].default_value = 0.6
+    except Exception:
+        bg.inputs["Color"].default_value = (0.55, 0.68, 0.85, 1.0)
 
     sc.render.engine = "BLENDER_EEVEE_NEXT"
     sc.render.resolution_x = args.res - args.res % 2

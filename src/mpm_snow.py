@@ -23,7 +23,7 @@ class MPMSnow:
                  dome_radius_m=4.0, dome_height_m=3.9, world_scale=10.0,
                  E=1.4e5, nu=0.2, rho=400.0,
                  theta_c=2.5e-2, theta_s=7.5e-3, xi=10.0,
-                 dt=5e-5, gravity=9.8, dome_sticky=True):
+                 dt=5e-5, gravity=14.0, dome_sticky=True):
         ti.init(arch=(ti.metal if arch == "metal" else ti.cpu),
                 default_fp=ti.f32, random_seed=1)
         self.n_grid = n_grid
@@ -77,16 +77,25 @@ class MPMSnow:
             self.C[p] = ti.Matrix.zero(ti.f32, 3, 3)
             self.Jp[p] = 1.0
 
-    def emit(self, count, vz=-1.5, height=None):
+    def emit(self, count, vz=-2.5, height=None):
         start = self.n_active[None]
         count = min(count, self.max_particles - start)
         if count <= 0:
             return 0
-        # ドーム頂部直上の円盤から投入（落下距離を短くし堆積を速める）
-        z = height if height is not None else (self.dome_c[2] + self.dome_R + 0.08)
+        # 投入高さ＝現在の雪山頂上のすぐ上（height指定）。落下距離をほぼ0にし、
+        # 「空中の板」を作らず雪面に着地→下から積もる。初期はドーム頂部直上。
+        z = height if height is not None else (self.dome_c[2] + self.dome_R + 0.03)
         self._emit(start, count, 0.5, 0.5, z, self.dome_R * 1.15, vz)
         self.n_active[None] = start + count
         return count
+
+    def pile_top_norm(self):
+        """現在の雪面頂上の正規化z（99パーセンタイルで外れ値除外）。"""
+        n = self.n_active[None]
+        if n == 0:
+            return self.dome_c[2] + self.dome_R
+        zs = self.x.to_numpy()[:n, 2]
+        return float(np.percentile(zs, 99))
 
     # -- MLS-MPM 1ステップ --
     @ti.kernel
@@ -169,11 +178,14 @@ class MPMSnow:
             self.x[p] += self.dt * nv
 
     # -- 位置を実寸[m]・Z-upで取得（Blender用） --
-    def positions_world(self):
+    def positions_world(self, settled_only=False, vmax=1.2):
         n = self.n_active[None]
         xs = self.x.to_numpy()[:n]
-        # 正規化→実寸(中心を原点へ): (x-0.5)*scale, 地面 floor_z→0
-        out = np.empty_like(xs)
+        if settled_only and n > 0:
+            vs = self.v.to_numpy()[:n]
+            speed = np.sqrt((vs ** 2).sum(1))
+            xs = xs[speed < vmax]                 # 着地・静止した雪だけ（空中の板を除外）
+        out = np.empty((len(xs), 3), dtype=np.float32)
         out[:, 0] = (xs[:, 0] - 0.5) * self.world_scale
         out[:, 1] = (xs[:, 1] - 0.5) * self.world_scale
         out[:, 2] = (xs[:, 2] - self.floor_z) * self.world_scale

@@ -18,6 +18,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json                                           # noqa: E402
 import taichi as ti                                  # noqa: E402
+from tqdm import tqdm                                 # noqa: E402
 from src.mpm_snow import MPMSnow                      # noqa: E402
 from src.geometry import geodesic_dome                # noqa: E402
 from src.bamboo import CULM_100, MOSO, G              # noqa: E402
@@ -124,9 +125,11 @@ def main():
     t0 = time.time()
     timeline = []
     collapse_frame = None
-    for frame in range(args.frames):
+    bar = tqdm(range(args.frames), desc="❄ MPM雪bake", unit="frame", ncols=92)
+    for frame in bar:
         if frame < emit_until and sim.n_active[None] < cap:
-            sim.emit(args.emit_per_frame)
+            h = min(sim.pile_top_norm() + 0.03, 0.92)
+            sim.emit(args.emit_per_frame, height=h)
         for _ in range(args.substeps):
             sim.substep()
         pos = sim.positions_world().astype(np.float32)
@@ -138,14 +141,12 @@ def main():
         ev = coupling.evaluate(pos)
         if collapse_frame is None and ev["max_util"] >= 1.0:
             collapse_frame = frame
+            bar.write(f"  ⚠ 崩壊検出: frame {frame} "
+                      f"(クラウン積雪{ev['crown_depth']*100:.0f}cm, 利用率{ev['max_util']:.2f})")
         timeline.append(dict(frame=frame, n=int(sim.n_active[None]),
                              max_util=ev["max_util"], crown_depth_cm=ev["crown_depth"] * 100))
-        if frame % 10 == 0 or frame == args.frames - 1 or frame == collapse_frame:
-            el = time.time() - t0
-            mark = " ⚠崩壊" if frame == collapse_frame else ""
-            print(f"  frame {frame:3d}/{args.frames}  粒子{sim.n_active[None]:7d}  "
-                  f"クラウン積雪{ev['crown_depth']*100:5.0f}cm  利用率{ev['max_util']:.2f}{mark}  "
-                  f"{el:.0f}s")
+        bar.set_postfix_str(f"粒子{sim.n_active[None]//1000}k 積雪{ev['crown_depth']*100:.0f}cm "
+                            f"利用率{ev['max_util']:.2f}{'⚠' if collapse_frame is not None else ''}")
     np.save(os.path.join(args.out, "final.npy"), sim.positions_world().astype(np.float32))
     json.dump(dict(timeline=timeline, collapse_frame=collapse_frame,
                    n_frames=args.frames),

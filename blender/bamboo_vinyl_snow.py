@@ -336,18 +336,40 @@ def main():
             if ob:
                 _set_interp(ob.animation_data, "BEZIER")
 
-        # 潰れる演出: 最終付近でドーム頂部が下にたわむ
+        # 潰れる演出: 後半で利用率1超え→ドラマチックに崩壊
         if args.collapse_defl > 0:
             bamboo_obj = bpy.data.objects.get("Bamboo")
             vinyl_obj_ref = bpy.data.objects.get("Vinyl")
+            # 崩壊3段階: 0.7=健全, 0.85=軋み(少し沈む), 1.0=崩落(大きく沈み広がる)
+            f_pre = int(N * 0.70)
+            f_creak = int(N * 0.85)
+            f_collapse = N
+            depth = args.collapse_defl       # 例 0.25 = 25% 圧縮
             for ob in (bamboo_obj, vinyl_obj_ref, cap_obj):
                 if ob is None:
                     continue
-                ob.scale = (1.0, 1.0, 1.0); ob.keyframe_insert("scale", frame=int(N*0.85))
-                # 頂部が沈むイメージ: Z方向に少し圧縮
-                ob.scale = (1.01, 1.01, 1.0 - args.collapse_defl/4.0)
-                ob.keyframe_insert("scale", frame=N)
+                # 健全
+                ob.scale = (1.0, 1.0, 1.0)
+                ob.keyframe_insert("scale", frame=1)
+                ob.keyframe_insert("scale", frame=f_pre)
+                ob.location = (ob.location[0], ob.location[1], ob.location[2])
+                ob.keyframe_insert("location", frame=1)
+                ob.keyframe_insert("location", frame=f_pre)
+                # 軋み（やや圧縮、わずかに膨らむ）
+                ob.scale = (1.02, 1.02, 1.0 - depth * 0.3)
+                ob.keyframe_insert("scale", frame=f_creak)
+                # 崩落（大きく沈み、横に広がる＝陥没）
+                ob.scale = (1.08, 1.08, 1.0 - depth)
+                ob.keyframe_insert("scale", frame=f_collapse)
                 _set_interp(ob.animation_data, "BEZIER")
+            # 雪冠は崩壊時にさらに沈下（雪も落ちる）
+            if cap_obj is not None:
+                cap_obj.location = (cap_obj.location[0], cap_obj.location[1],
+                                    cap_obj.location[2])
+                cap_obj.keyframe_insert("location", frame=f_creak)
+                cap_obj.location = (cap_obj.location[0], cap_obj.location[1],
+                                    cap_obj.location[2] - depth * 0.5)
+                cap_obj.keyframe_insert("location", frame=f_collapse)
 
     sc.render.engine = "BLENDER_EEVEE_NEXT"
     sc.render.resolution_x = args.res - args.res % 2

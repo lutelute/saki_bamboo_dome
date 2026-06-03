@@ -138,6 +138,25 @@ P_cr = π² · E · I / (KL)²
 
 > 完全な理論的裏付けは「4. 工学的根拠」セクションを参照（ISO 22156、AIJ規準、Stomakhin et al. 2013）
 
+### 🎬 プレゼン用ランチャー
+
+```bash
+# プレゼン素材を一括起動（ダッシュボード+GIFインデックス+Blender）
+./tools/presentation_mode.sh setup
+
+# 個別起動
+./tools/launch_presentation.sh dashboard      # ダッシュボードのみ
+./tools/launch_presentation.sh blender        # Blender崩壊シーン
+./tools/launch_presentation.sh main           # メイン崩壊動画
+./tools/launch_presentation.sh videos         # 全動画順次再生
+./tools/launch_presentation.sh list           # 全成果物一覧
+
+# 終了
+./tools/presentation_mode.sh close
+```
+
+GIFインデックスHTML: `docs/gif/index.html` （全GIF+動画+blendへのリンク集）
+
 ### 🔧 再生成コマンド
 
 ```bash

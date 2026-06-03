@@ -51,6 +51,9 @@ open -a Blender output/sim/snow_color.blend          # シンプル雪積もり
 
 ### 📚 ドキュメント
 
+#### 🔬 技術文書（アカデミック）
+- [`docs/TECHNICAL.md`](docs/TECHNICAL.md) - **技術文書**：構造モデル・荷重・FEM・崩壊機構・MPM雪物理 *（引用文献20件）*
+- [`docs/COLLAPSE_PHYSICS.md`](docs/COLLAPSE_PHYSICS.md) - **崩壊機構の理論と数値モデル**：Rankine-Gordon式、塑性ヒンジ、連鎖崩壊
 - [`docs/MANUAL.md`](docs/MANUAL.md) - Blender操作マニュアル（開き方・動かし方・トラブル対応）
 - [`docs/PRESENTATION.md`](docs/PRESENTATION.md) - プレゼンストーリー・質問対策・数値例
 - [`docs/gif/`](docs/gif/) - ハイライトGIF集（プレゼン挿入用）
